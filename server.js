@@ -4,6 +4,7 @@ const cors = require('cors');
 const session = require('express-session');    // Lart!
 const passport = require('./passport');        // Lart!
 const adminRoutes = require('./routes/admin.routes');
+console.log("RAILWAY ENV:", process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
 
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
