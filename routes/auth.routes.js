@@ -1,42 +1,32 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
-const passport = require('../passport'); // Shto këtë rresht!
+const passport = require('../passport');
 
-// Regjistrimi dhe login klasik
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const SUCCESS_PATH = process.env.CLIENT_SUCCESS_PATH || "/auth/success"; // ← path i frontit
+
+// login/register klasik (nëse i përdor)
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 
-// Provë API
-router.post('/prov', (req, res) => {
-  res.json({ message: "Rruga e routes/auth.routes.js është OK" });
-});
+// GOOGLE
+router.get('/google',
+  passport.authenticate('google', { scope: ['profile', 'email'], session: false })
+);
 
-// ===============================
-// GOOGLE LOGIN (SHTO KËTO)
-// ===============================
-
-// Hapi 1: Redirecto user-in te Google
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-
-// Hapi 2: Google kthen user-in këtu (redirect URL)
-router.get(
-  '/google/callback',
-  passport.authenticate('google', { failureRedirect: 'http://localhost:3000/login' }),
+router.get('/google/callback',
+  passport.authenticate('google', { failureRedirect: `${FRONTEND_URL}/login`, session: false }),
   (req, res) => {
-    // Krijo JWT për frontend
     const jwt = require('jsonwebtoken');
     const token = jwt.sign(
-      {
-        id: req.user.id,
-        email: req.user.email,
-        name: req.user.name
-      },
+      { id: req.user.id, email: req.user.email, role: req.user.role },
       process.env.JWT_SECRET || 'sekret',
-      { expiresIn: '1d' }
+      { expiresIn: '7d' }
     );
-    // Redirecto te frontend me token-in si query param
-    res.redirect(`http://localhost:3000?token=${token}`);
+    const name = encodeURIComponent(req.user.name || '');
+    // Redirect te fronti: /auth/success?token=...&name=...
+    res.redirect(`${FRONTEND_URL}${SUCCESS_PATH}?token=${token}&name=${name}`);
   }
 );
 
