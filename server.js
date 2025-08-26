@@ -2,26 +2,33 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
+const MySQLStore = require('express-mysql-session')(session);
 const jwt = require('jsonwebtoken');
 const passport = require('./passport');
 
+// Routes & middleware
 const adminRoutes = require('./routes/admin.routes');
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
 const productRoutes = require('./routes/product.routes');
 const orderRoutes = require('./routes/order.routes');
-const authenticateToken = require('./middleware/auth.middleware');
-const ordersRoutes = require('./routes/orders.routes');
 const adminOrdersRoutes = require('./routes/admin.orders.routes');
+const authenticateToken = require('./middleware/auth.middleware');
+
+// (opsionale) pool për health-check
+const pool = require('./db/index');
+
 const app = express();
 
+/* ----------------------------- CORS ----------------------------- */
 const allowedOrigins = [
   'http://localhost:3000',
   'https://curious-034441.netlify.app',
   'https://zesty-pegasus-9b5fb3.netlify.app',
   'https://topmobile.store',
-  'https://www.topmobile.store'
-];
+  'https://www.topmobile.store',
+  process.env.FRONTEND_URL // p.sh. https://topmobile.store
+].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -31,22 +38,49 @@ app.use(cors({
       callback(new Error('Not allowed by CORS: ' + origin));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
 }));
 
 app.use(express.json());
 
+/* ------------------------ SESSION STORE (MySQL) ------------------------ */
+// Render është prapa proxy -> e nevojshme që cookie "secure" të ketë efekt
+app.set('trust proxy', 1);
+
+// Konfiguro store në Aiven MySQL (SSL pa CA është ok)
+const sessionStore = new MySQLStore({
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
+  ssl: process.env.DB_SSL === 'true' ? { minVersion: 'TLSv1.2' } : undefined,
+  clearExpired: true,
+  checkExpirationInterval: 15 * 60 * 1000, // 15 min
+  expiration: 24 * 60 * 60 * 1000,         // 1 ditë
+});
+
 app.use(session({
-  secret: 'sekret', // në prodhim: përdor ENV dhe secure:true + trust proxy
+  name: process.env.SESSION_NAME || 'sid',
+  secret: process.env.SESSION_SECRET || 'CHANGE_ME_IN_ENV', // mos e lë në kod
+  store: sessionStore,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false }
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',              // true në Render/HTTPS
+    sameSite: (process.env.COOKIE_SAMESITE || 'lax'),           // 'lax' ose 'none' për cross-site
+    domain: process.env.SESSION_COOKIE_DOMAIN || '.topmobile.store', // lejon subdomain
+    maxAge: 24 * 60 * 60 * 1000,
+  },
 }));
 
+/* ----------------------- PASSPORT (SESSION) ----------------------- */
 app.use(passport.initialize());
 app.use(passport.session());
 
-/* ------------------- GOOGLE OAUTH (VENDOSE PARA ROUTER-AVE) ------------------- */
+/* ------------------- GOOGLE OAUTH (para router-ave) ------------------- */
 const hasGoogleCreds = Boolean(
   process.env.GOOGLE_CLIENT_ID &&
   process.env.GOOGLE_CLIENT_SECRET &&
@@ -81,18 +115,6 @@ if (hasGoogleCreds) {
       return res.redirect(redirect.toString());
     }
   );
-  const pool = require('./db/index'); // sigurohu që path është i saktë
-
-app.get('/health/db', async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT NOW() AS time');
-    res.json({ status: 'ok', db_time: rows[0].time });
-  } catch (err) {
-    console.error('❌ DB connection error:', err.message);
-    res.status(500).json({ status: 'error', error: err.message });
-  }
-});
-
 
   app.get('/api/auth/google/failure', (_req, res) => {
     res.status(401).json({ error: 'Google authentication failed' });
@@ -105,18 +127,17 @@ app.get('/health/db', async (req, res) => {
     res.status(503).json({ error: 'Google OAuth is disabled (missing env vars).' })
   );
 }
-/* ------------------------------------------------------------------------------ */
 
-/* ----------------------------- ROUTER-AT E TJERË ------------------------------ */
+/* ------------------------------- ROUTES ------------------------------- */
 app.use('/api/admin', adminRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/auth', authRoutes);          // ⬅️ vjen PAS Google OAuth
+app.use('/api/auth', authRoutes); // ⬅️ vjen PAS Google OAuth
 app.use('/api/user', userRoutes);
 app.use('/api/warranties', require('./routes/warranty.routes'));
-app.use('/api/orders', ordersRoutes);
 app.use('/api/admin', adminOrdersRoutes);
-/* --------------------------------- TEST/HEALTH -------------------------------- */
+
+/* ----------------------------- HEALTH/TEST ---------------------------- */
 app.get('/', (_req, res) => res.send('TopMobile API is running'));
 app.get('/test', (_req, res) => res.json({ test: "OK nga server.js" }));
 app.get('/api/protected', authenticateToken, (req, res) => {
@@ -126,7 +147,18 @@ app.post('/api/test', (req, res) => {
   res.json({ message: 'Test route OK', body: req.body });
 });
 
-/* ---------------------------------- START ------------------------------------- */
+// health-check për DB (opsionale)
+app.get('/health/db', async (_req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT NOW() AS time');
+    res.json({ status: 'ok', db_time: rows[0].time });
+  } catch (err) {
+    console.error('❌ DB connection error:', err.message);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+/* -------------------------------- START -------------------------------- */
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
