@@ -15,6 +15,7 @@ router.get('/google',
   passport.authenticate('google', { scope: ['profile', 'email'], session: false })
 );
 
+
 router.get('/google/callback',
   passport.authenticate('google', { failureRedirect: `${FRONTEND_URL}/login`, session: false }),
   (req, res) => {
