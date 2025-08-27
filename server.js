@@ -24,7 +24,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:3000',
   'https://curious-034441.netlify.app',
-  'https://zesty-pegasus-9b5fb3.netlify.app',
+  'https://topmobile.store/',
   'https://topmobile.store',
   'https://www.topmobile.store',
   process.env.FRONTEND_URL // p.sh. https://topmobile.store
@@ -51,14 +51,14 @@ app.set('trust proxy', 1);
 // Konfiguro store në Aiven MySQL (SSL pa CA është ok)
 const sessionStore = new MySQLStore({
   host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT) || 3306,
+  port: Number(process.env.DB_PORT),
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
-  ssl: process.env.DB_SSL === 'true' ? { minVersion: 'TLSv1.2' } : undefined,
+  ssl: process.env.DB_SSL === 'true' ? { minVersion: 'TLSv1.2', rejectUnauthorized: false } : undefined,
   clearExpired: true,
-  checkExpirationInterval: 15 * 60 * 1000, // 15 min
-  expiration: 24 * 60 * 60 * 1000,         // 1 ditë
+  checkExpirationInterval: 15 * 60 * 1000,
+  expiration: 24 * 60 * 60 * 1000,
 });
 
 app.use(session({
