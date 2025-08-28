@@ -1,4 +1,3 @@
-// middleware/auth.middleware.js
 const jwt = require('jsonwebtoken');
 
 module.exports = function authenticateToken(req, res, next) {
@@ -10,7 +9,6 @@ module.exports = function authenticateToken(req, res, next) {
     const token = authHeader.split(' ')[1];
     const payload = jwt.verify(token, process.env.JWT_SECRET);
 
-    // prano edhe token-at e vjetër me "sub"
     req.user = {
       id: payload.id || payload.sub,
       email: payload.email,
@@ -20,8 +18,8 @@ module.exports = function authenticateToken(req, res, next) {
     if (!req.user.id) {
       return res.status(401).json({ message: 'Invalid token payload' });
     }
-    return next();
-  } catch (err) {
+    next();
+  } catch (_e) {
     return res.status(401).json({ message: 'Invalid or expired token' });
   }
 };
