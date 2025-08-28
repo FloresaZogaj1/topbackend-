@@ -5,6 +5,8 @@ const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
 const jwt = require('jsonwebtoken');
 const passport = require('./passport');
+const path = require('path');
+
 
 // Routes & middleware
 const adminRoutes = require('./routes/admin.routes');
@@ -79,6 +81,8 @@ app.use(session({
 /* ----------------------- PASSPORT (SESSION) ----------------------- */
 app.use(passport.initialize());
 app.use(passport.session());
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
 
 /* ------------------- GOOGLE OAUTH (para router-ave) ------------------- */
 const hasGoogleCreds = Boolean(

@@ -70,3 +70,8 @@ exports.remove = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+// OPTIONAL: nëse do ta përdorësh nga router pas upload-it për të kthyer url (por realisht e bëjmë në router)
+exports.ok = (req, res) => {
+  res.json({ ok: true });
+};
