@@ -2,7 +2,8 @@
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('../middleware/auth.middleware');
-const requireAdmin = require('../middleware/admin.middleware');
+// përdor të njëjtin guard si rruget e tjera admin:
+const requireAdmin = require('../middleware/requireAdmin');
 
 const {
   getAllOrders,
