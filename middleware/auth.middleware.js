@@ -1,15 +1,27 @@
+// middleware/auth.middleware.js
 const jwt = require('jsonwebtoken');
 
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  if (!token) return res.status(401).json({ message: 'No token, not authorized!' });
+module.exports = function authenticateToken(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || '';
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token, not authorized!' });
+    }
+    const token = authHeader.split(' ')[1];
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
 
-  jwt.verify(token, process.env.JWT_SECRET || 'sekret', (err, user) => {
-    if (err) return res.status(403).json({ message: 'Invalid token' });
-    req.user = user;
-    next();
-  });
-}
-
-module.exports = authenticateToken; // EKSPORTO FUNKSIONIN DIREKT
+    // prano edhe token-at e vjetër me "sub"
+    req.user = {
+      id: payload.id || payload.sub,
+      email: payload.email,
+      role: payload.role || 'user',
+      name: payload.name,
+    };
+    if (!req.user.id) {
+      return res.status(401).json({ message: 'Invalid token payload' });
+    }
+    return next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+};
