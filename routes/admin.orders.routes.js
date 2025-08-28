@@ -1,18 +1,21 @@
-// routes/admin.orders.routes.js
 const express = require('express');
 const router = express.Router();
+
 const authenticateToken = require('../middleware/auth.middleware');
-// përdor të njëjtin guard si rruget e tjera admin:
-const requireAdmin = require('../middleware/requireAdmin');
+const orderCtl = require('../controllers/order.controller');
 
-const {
-  getAllOrders,
-  updateOrderAdmin,
-  deleteOrderAdmin
-} = require('../controllers/order.controller');
+function requireRole(role) {
+  return (req, res, next) => {
+    if (!req.user || req.user.role !== role) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    next();
+  };
+}
 
-router.get('/orders', authenticateToken, requireAdmin, getAllOrders);
-router.patch('/orders/:id', authenticateToken, requireAdmin, updateOrderAdmin);
-router.delete('/orders/:id', authenticateToken, requireAdmin, deleteOrderAdmin);
+// Admin endpoints
+router.get('/orders', authenticateToken, requireRole('admin'), orderCtl.getAllOrders);
+router.patch('/orders/:id', authenticateToken, requireRole('admin'), orderCtl.updateOrderAdmin);
+router.delete('/orders/:id', authenticateToken, requireRole('admin'), orderCtl.deleteOrderAdmin);
 
 module.exports = router;
