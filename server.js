@@ -43,7 +43,7 @@ app.use(cors({
   credentials: true,
   methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
 }));
-
+app.options('*', cors());              // ← SHTOJE menjëherë pas app.use(cors(...))
 app.use(express.json());
 
 /* ------------------------ SESSION STORE (MySQL) ------------------------ */
@@ -70,19 +70,20 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',              // true në Render/HTTPS
-    sameSite: (process.env.COOKIE_SAMESITE || 'lax'),           // 'lax' ose 'none' për cross-site
-    domain: process.env.SESSION_COOKIE_DOMAIN || '.topmobile.store', // lejon subdomain
-    maxAge: 24 * 60 * 60 * 1000,
-  },
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  domain: process.env.NODE_ENV === 'production' ? '.topmobile.store' : undefined,
+  maxAge: 24 * 60 * 60 * 1000,
+},
+
 }));
 
 /* ----------------------- PASSPORT (SESSION) ----------------------- */
 app.use(passport.initialize());
 app.use(passport.session());
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
+app.use((req, _res, next) => { console.log(req.method, req.path); next(); });
 
 /* ------------------- GOOGLE OAUTH (para router-ave) ------------------- */
 const hasGoogleCreds = Boolean(
