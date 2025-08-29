@@ -29,21 +29,24 @@ exports.createOrder = async (req, res) => {
   try {
     const userId = req.user?.id || null;
 
-    // prano të dy formatet nga fronti
     const customer_name = req.body.customer_name || req.body.customerName || req.body.fullName || req.body.name;
     const phone        = req.body.phone;
     const address      = req.body.address || null;
     const city         = req.body.city || null;
     const note         = req.body.note || null;
 
-    const delivery_fee = Number(
-      req.body.delivery_fee ?? req.body.shippingCost ?? 0
-    );
-
+    const delivery_fee = Number(req.body.delivery_fee ?? req.body.shippingCost ?? 0);
     const cartItems    = req.body.cartItems || req.body.items || [];
 
     if (!customer_name || !phone || !Array.isArray(cartItems) || cartItems.length === 0) {
       return res.status(400).json({ message: 'Të dhënat e porosisë janë të paplota.' });
+    }
+
+    // Validim i artikujve
+    for (const it of cartItems) {
+      const pid = it.product_id ?? it.productId ?? it.id ?? null;
+      if (!pid) return res.status(400).json({ message: 'Mungon productId te një artikull.' });
+      if (Number(it.qty ?? it.quantity ?? 1) <= 0) return res.status(400).json({ message: 'Sasia duhet të jetë ≥ 1.' });
     }
 
     const subtotal = cartItems.reduce((s, it) =>
@@ -66,10 +69,11 @@ exports.createOrder = async (req, res) => {
         const vals = [];
         const params = [];
         cartItems.forEach(it => {
-          const pid = it.product_id ?? it.id ?? null;
-          const qty = it.qty ?? it.quantity ?? 1;
+          const pid = it.product_id ?? it.productId ?? it.id ?? null;
+          const qty = Number(it.qty ?? it.quantity ?? 1) || 1;
+          const price = Number(it.price || 0);
           vals.push('(?,?,?,?,?)');
-          params.push(orderId, pid, it.name, it.price, qty);
+          params.push(orderId, pid, it.name || null, price, qty);
         });
         await conn.execute(
           `INSERT INTO order_items (order_id, product_id, name, price, qty)
@@ -123,14 +127,14 @@ exports.getAllOrders = async (_req, res) => {
     res.status(500).json({ message: 'Gabim gjatë marrjes së porosive.' });
   }
 };
-// === GET /api/user/orders — porositë e user-it të kyçur ===
+
 exports.getOrdersForUser = async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'Not authenticated' });
 
     const [orders] = await pool.query(
-      'SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC',
+      'SELECT * FROM orders WHERE user_id = ? ORDER BY id DESC',
       [userId]
     );
     if (!orders.length) return res.json([]);
@@ -153,7 +157,6 @@ exports.getOrdersForUser = async (req, res) => {
   }
 };
 
-// === PATCH /api/admin/orders/:id — ndryshon status / payment_status ===
 exports.updateOrderAdmin = async (req, res) => {
   try {
     const { id } = req.params;
@@ -177,79 +180,10 @@ exports.updateOrderAdmin = async (req, res) => {
   }
 };
 
-// === DELETE /api/admin/orders/:id — fshin porosi ===
 exports.deleteOrderAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // fshi fillimisht items (nëse nuk ke ON DELETE CASCADE)
     await pool.execute('DELETE FROM order_items WHERE order_id = ?', [id]);
-    await pool.execute('DELETE FROM orders WHERE id = ?', [id]);
-
-    res.json({ message: 'U fshi.' });
-  } catch (err) {
-    console.error('deleteOrderAdmin error:', err);
-    res.status(500).json({ message: 'Gabim gjatë fshirjes.' });
-  }
-};
-// === GET /api/user/orders
-exports.getOrdersForUser = async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ message: 'Not authenticated' });
-
-    const [orders] = await pool.query(
-      'SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC',
-      [userId]
-    );
-    if (!orders.length) return res.json([]);
-
-    const ids = orders.map(o => o.id);
-    const [items] = await pool.query(
-      `SELECT * FROM order_items WHERE order_id IN (${ids.map(() => '?').join(',')})`,
-      ids
-    );
-    const itemsByOrder = items.reduce((acc, it) => {
-      (acc[it.order_id] = acc[it.order_id] || []).push(it);
-      return acc;
-    }, {});
-
-    const out = orders.map(o => mapOrderRowToClient(o, itemsByOrder[o.id] || []));
-    res.json(out);
-  } catch (err) {
-    console.error('getOrdersForUser error:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// === PATCH /api/admin/orders/:id
-exports.updateOrderAdmin = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, payment_status } = req.body;
-
-    if (!status && !payment_status) {
-      return res.status(400).json({ message: 'Asgjë për përditësim.' });
-    }
-    const fields = [];
-    const params = [];
-    if (status) { fields.push('status = ?'); params.push(status); }
-    if (payment_status) { fields.push('payment_status = ?'); params.push(payment_status); }
-    params.push(id);
-
-    await pool.execute(`UPDATE orders SET ${fields.join(', ')} WHERE id = ?`, params);
-    res.json({ message: 'U përditësua.' });
-  } catch (err) {
-    console.error('updateOrderAdmin error:', err);
-    res.status(500).json({ message: 'Gabim gjatë update.' });
-  }
-};
-
-// === DELETE /api/admin/orders/:id
-exports.deleteOrderAdmin = async (req, res) => {
-  try {
-    const { id } = req.params;
-    await pool.execute('DELETE FROM order_items WHERE order_id = ?', [id]); // nëse s’ke CASCADE
     await pool.execute('DELETE FROM orders WHERE id = ?', [id]);
     res.json({ message: 'U fshi.' });
   } catch (err) {
