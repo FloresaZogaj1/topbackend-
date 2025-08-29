@@ -22,7 +22,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:3000',
   'https://curious-034441.netlify.app',
-  'https://topmobile.store/',
+  'https://topmobile.store',
   'https://topmobile.store',
   'https://www.topmobile.store',
   process.env.FRONTEND_URL
