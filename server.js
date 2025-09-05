@@ -13,10 +13,20 @@ const productRoutes = require('./routes/product.routes');
 const orderRoutes = require('./routes/order.routes');
 const adminOrdersRoutes = require('./routes/admin.orders.routes');
 const authenticateToken = require('./middleware/auth.middleware');
+const contractRoutes = require("./routes/contracts.routes");
 
 const pool = require('./db/index');
 
 const app = express();
+app.use((req, res, next) => {
+  const t0 = Date.now();
+  const path = req.originalUrl || req.path;
+  res.on('finish', () => {
+    console.log(`${req.method} ${path} -> ${res.statusCode} ${Date.now()-t0}ms`);
+  });
+  next();
+});
+
 
 /* ----------------------------- CORS ----------------------------- */
 const allowedOrigins = [
@@ -54,6 +64,20 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+// ↙︎ Vendose PAS app = express() dhe PARA app.use('/api/...')
+app.use((req, res, next) => {
+  const start = Date.now();
+  const { method } = req;
+  const path = req.originalUrl || req.path;
+
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    // do shohësh p.sh.: POST /api/orders -> 401 4ms
+    console.log(`${method} ${path} -> ${res.statusCode} ${ms}ms`);
+  });
+
+  next();
+});
 
 /* ------------------------ SESSION STORE (MySQL) ------------------------ */
 app.set('trust proxy', 1);
@@ -104,9 +128,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/auth', authRoutes); // Google OAuth & login janë këtu
-app.use('/api/user', userRoutes);
+app.use('/api/user', require('./routes/user.routes'));
 app.use('/api/warranties', require('./routes/warranty.routes'));
 app.use('/api/admin', adminOrdersRoutes);
+app.use("/api/contracts", contractRoutes);
 
 /* ----------------------------- HEALTH/TEST ---------------------------- */
 app.get('/', (_req, res) => res.send('TopMobile API is running'));
@@ -130,6 +155,17 @@ app.get('/health/db', async (_req, res) => {
 
 /* -------------------------------- START -------------------------------- */
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+// 🔚 JSON error handler – gjithmonë JSON, jo HTML
+// -------------------------------- ERROR HANDLER (JSON) --------------------------------
+app.use((err, req, res, next) => {
+  const debug = process.env.DEBUG_ERRORS === 'true';
+  const payload = { message: 'Internal server error' };
+  if (debug) {
+    payload.code = err.code;
+    payload.detail = err.sqlMessage || err.message || String(err);
+    payload.path = req.path;
+  }
+  console.error('UNCAUGHT ERROR:', err);
+  res.status(500).json(payload);
 });
+

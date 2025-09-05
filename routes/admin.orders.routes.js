@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const authenticateToken = require('../middleware/auth.middleware');
+// ose: const { authenticateToken } = require('../middleware/auth.middleware');
 const orderCtl = require('../controllers/order.controller');
 
 function requireRole(role) {
