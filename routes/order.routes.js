@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('../middleware/auth.middleware');
+const optionalAuth = require('../middleware/optionalAuth');
 const { createOrder, getAllOrders } = require('../controllers/order.controller');
 
-// Rikthe login (tani që testimi kaloi)
-router.post('/', authenticateToken, createOrder);
+// POST për të gjithë (guest ose user)
+router.post('/', optionalAuth, createOrder);
 
-// Mbetet e mbrojtur
+// GET vetëm për user/admin
 router.get('/', authenticateToken, getAllOrders);
 
 module.exports = router;
