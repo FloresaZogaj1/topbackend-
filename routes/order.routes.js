@@ -1,13 +1,33 @@
+// routes/order.routes.js
 const express = require('express');
 const router = express.Router();
+
+// ⚠️ import default (pa kllapa)
 const authenticateToken = require('../middleware/auth.middleware');
-const optionalAuth = require('../middleware/optionalAuth');
-const { createOrder, getAllOrders } = require('../controllers/order.controller');
+// named import
+const { requireAdmin } = require('../middleware/requireAdmin');
 
-// POST për të gjithë (guest ose user)
-router.post('/', optionalAuth, createOrder);
+// Controller (named exports)
+const {
+  createOrder,
+  getMyOrders,
+  getOrderById,
+  getAllOrders,
+  updateOrderStatus,
+  deleteOrder,
+} = require('../controllers/order.controller');
 
-// GET vetëm për user/admin
-router.get('/', authenticateToken, getAllOrders);
+// --- PUBLIC ---
+// Krijo porosi (checkout pa login)
+router.post('/', createOrder);
+
+// --- USER (me JWT) ---
+router.get('/mine', authenticateToken, getMyOrders);
+router.get('/:id', authenticateToken, getOrderById);
+
+// --- ADMIN (me JWT + admin) ---
+router.get('/', authenticateToken, requireAdmin, getAllOrders);
+router.put('/:id/status', authenticateToken, requireAdmin, updateOrderStatus);
+router.delete('/:id', authenticateToken, requireAdmin, deleteOrder);
 
 module.exports = router;

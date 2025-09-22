@@ -1,8 +1,7 @@
 // controllers/order.controller.js
 const pool = require('../db');
-const { notifyOrderWA } = require('../services/whatsapp.service');
 
-// Helpers
+// =============== Helpers ===============
 const toStr = (v) => (v === undefined || v === null) ? '' : String(v);
 const toNum = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
 const parsePrice = (v) => {
@@ -34,7 +33,7 @@ function mapOrderRowToClient(row, items = []) {
     createdAt: row.created_at,
     items: items.map(i => ({
       id: i.id,
-      productId: i.product_id, // slug/string
+      productId: i.product_id,
       name: i.name,
       price: Number(i.price),
       qty: i.qty,
@@ -42,7 +41,7 @@ function mapOrderRowToClient(row, items = []) {
   };
 }
 
-/* --------------------------------- CREATE --------------------------------- */
+// =============== CREATE (PUBLIC) ===============
 async function createOrder(req, res) {
   try {
     const userId = req.user?.id || null;
@@ -54,6 +53,8 @@ async function createOrder(req, res) {
     const address = toStr(req.body.address);
     const city = toStr(req.body.city);
     const note = toStr(req.body.note);
+
+    // prano delivery_fee ose shippingCost
     const delivery_fee = toNum(req.body.delivery_fee ?? req.body.shippingCost ?? 0);
 
     const rawItems = Array.isArray(req.body.cartItems || req.body.items)
@@ -61,17 +62,13 @@ async function createOrder(req, res) {
       : [];
 
     if (!customer_name || !phone || rawItems.length === 0) {
-      return res.status(400).json({ message: "Të dhënat e porosisë janë të paplota." });
+      return res.status(400).json({ message: 'Të dhënat e porosisë janë të paplota.' });
     }
 
-    // Normalizim i artikujve – pranon numra OSE slug, s’kthen më "productId i pavlefshëm"
     const safeItems = [];
     for (const [idx, it] of rawItems.entries()) {
-      const name = toStr(it?.name || it?.title || it?.productName || it?.model || "");
-
-      const pidCandidate =
-        it?.product_id ?? it?.productId ?? it?.id ?? it?.sku ?? it?.slug ?? it?.code ?? it?._id ?? "";
-
+      const name = toStr(it?.name || it?.title || it?.productName || it?.model || '');
+      const pidCandidate = it?.product_id ?? it?.productId ?? it?.id ?? it?.sku ?? it?.slug ?? it?.code ?? it?._id ?? '';
       let pid = slugify(pidCandidate || name);
       if (!pid) pid = `auto-${Date.now()}-${idx}`;
 
@@ -79,27 +76,25 @@ async function createOrder(req, res) {
       const price = parsePrice(it?.price);
 
       if (!Number.isFinite(qty) || qty <= 0) {
-        return res.status(400).json({ message: "Sasia duhet të jetë ≥ 1." });
+        return res.status(400).json({ message: 'Sasia duhet të jetë ≥ 1.' });
       }
       if (!Number.isFinite(price) || price < 0) {
-        return res.status(400).json({ message: "Çmimi i pavlefshëm." });
+        return res.status(400).json({ message: 'Çmimi i pavlefshëm.' });
       }
-
       safeItems.push({ pid, name: name || `#${pid}`, qty, price });
     }
 
     const subtotal = Number(safeItems.reduce((s, it) => s + it.price * it.qty, 0).toFixed(2));
     const total = Number((subtotal + delivery_fee).toFixed(2));
 
-    const STATUS_DEFAULT = process.env.ORDER_STATUS_DEFAULT || "pending";
-    const PAY_STATUS_DEFAULT = process.env.PAYMENT_STATUS_DEFAULT || "unpaid";
+    const STATUS_DEFAULT = process.env.ORDER_STATUS_DEFAULT || 'pending';
+    const PAY_STATUS_DEFAULT = process.env.PAYMENT_STATUS_DEFAULT || 'unpaid';
 
     const conn = await pool.getConnection();
     let orderId;
     try {
       await conn.beginTransaction();
 
-      // orders
       const [or] = await conn.execute(
         `INSERT INTO orders
          (user_id, customer_name, phone, address, city, note, subtotal, delivery_fee, total, status, payment_status)
@@ -108,13 +103,10 @@ async function createOrder(req, res) {
       );
       orderId = or.insertId;
 
-      // order_items (product_id = slug/string)
       if (safeItems.length) {
-        const rows = safeItems.map(() => "(?,?,?,?,?)").join(",");
+        const rows = safeItems.map(() => '(?,?,?,?,?)').join(',');
         const params = [];
-        for (const it of safeItems) {
-          params.push(orderId, it.pid, it.name, it.price, it.qty);
-        }
+        for (const it of safeItems) params.push(orderId, it.pid, it.name, it.price, it.qty);
         await conn.execute(
           `INSERT INTO order_items (order_id, product_id, name, price, qty) VALUES ${rows}`,
           params
@@ -124,46 +116,34 @@ async function createOrder(req, res) {
       await conn.commit();
     } catch (e) {
       await conn.rollback();
-      console.error("[createOrder] SQL ERROR:", e);
-      return res.status(500).json({ message: "Gabim gjatë krijimit të porosisë.", detail: e.sqlMessage || e.message });
+      console.error('[createOrder] SQL ERROR:', e);
+      return res.status(500).json({ message: 'Gabim gjatë krijimit të porosisë.', detail: e.sqlMessage || e.message });
     } finally {
       conn.release();
     }
 
-    // njoftim opsional
-    notifyOrderWA({
-      id: orderId,
-      customer_name, phone, address, city, note,
-      subtotal, delivery_fee, total, status: STATUS_DEFAULT,
-      items: safeItems
-    }).catch(() => {});
+    // njoftim opsional (mos le të bjerë nëse mungon)
+    try {
+      const svc = require('../services/whatsapp.service');
+      if (svc && typeof svc.notifyOrderWA === 'function') {
+        svc.notifyOrderWA({
+          id: orderId,
+          customer_name, phone, address, city, note,
+          subtotal, delivery_fee, total, status: STATUS_DEFAULT,
+          items: safeItems
+        }).catch(() => {});
+      }
+    } catch (_) {}
 
-    return res.status(201).json({ message: "Porosia u krijua", id: orderId, total });
+    return res.status(201).json({ message: 'Porosia u krijua', id: orderId, total });
   } catch (err) {
-    console.error("createOrder top error:", err);
-    return res.status(500).json({ message: "Gabim serveri." });
+    console.error('createOrder top error:', err);
+    return res.status(500).json({ message: 'Gabim serveri.' });
   }
 }
 
-/* --------------------------------- LIST ALL --------------------------------- */
-async function getAllOrders(_req, res) {
-  try {
-    const [orders] = await pool.query('SELECT * FROM orders ORDER BY id DESC LIMIT 500');
-    if (!orders.length) return res.json([]);
-    const ids = orders.map(o => o.id);
-    const [items] = await pool.query(
-      `SELECT * FROM order_items WHERE order_id IN (${ids.map(() => '?').join(',')})`,
-      ids
-    );
-    const itemsByOrder = items.reduce((acc, it) => ((acc[it.order_id] = acc[it.order_id] || []).push(it), acc), {});
-    res.json(orders.map(o => mapOrderRowToClient(o, itemsByOrder[o.id] || [])));
-  } catch (err) {
-    console.error('getAllOrders error:', err);
-    res.status(500).json({ message: 'Gabim gjatë marrjes së porosive.' });
-  }
-}
-
-async function getOrdersForUser(req, res) {
+// =============== USER (JWT) ===============
+async function getMyOrders(req, res) {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'Not authenticated' });
@@ -179,47 +159,91 @@ async function getOrdersForUser(req, res) {
     const itemsByOrder = items.reduce((acc, it) => ((acc[it.order_id] = acc[it.order_id] || []).push(it), acc), {});
     res.json(orders.map(o => mapOrderRowToClient(o, itemsByOrder[o.id] || [])));
   } catch (err) {
-    console.error('getOrdersForUser error:', err);
+    console.error('getMyOrders error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 }
 
-async function updateOrderAdmin(req, res) {
+async function getOrderById(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'Not authenticated' });
+
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid order id' });
+
+    const [[order]] = await pool.query('SELECT * FROM orders WHERE id = ? LIMIT 1', [id]);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (order.user_id !== userId) return res.status(403).json({ message: 'Forbidden' });
+
+    const [items] = await pool.query('SELECT * FROM order_items WHERE order_id = ?', [id]);
+    return res.json(mapOrderRowToClient(order, items));
+  } catch (err) {
+    console.error('getOrderById error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+}
+
+// =============== ADMIN (JWT + ADMIN) ===============
+async function getAllOrders(_req, res) {
+  try {
+    const [orders] = await pool.query('SELECT * FROM orders ORDER BY id DESC');
+    res.json(orders);
+  } catch (err) {
+    console.error('getAllOrders error:', err);
+    res.status(500).json({ message: 'Error fetching orders' });
+  }
+}
+
+async function updateOrderStatus(req, res) {
   try {
     const { id } = req.params;
     const { status, payment_status } = req.body;
-    if (!status && !payment_status) return res.status(400).json({ message: 'Asgjë për përditësim.' });
 
     const fields = [];
     const params = [];
     if (status) { fields.push('status = ?'); params.push(status); }
     if (payment_status) { fields.push('payment_status = ?'); params.push(payment_status); }
-    params.push(id);
+    if (!fields.length) return res.status(400).json({ message: 'Asgjë për përditësim.' });
 
+    params.push(id);
     await pool.execute(`UPDATE orders SET ${fields.join(', ')} WHERE id = ?`, params);
-    res.json({ message: 'U përditësua.' });
+    res.json({ message: 'Order updated' });
   } catch (err) {
-    console.error('updateOrderAdmin error:', err);
-    res.status(500).json({ message: 'Gabim gjatë update.' });
+    console.error('updateOrderStatus error:', err);
+    res.status(500).json({ message: 'Error updating order' });
   }
 }
 
-async function deleteOrderAdmin(req, res) {
+async function deleteOrder(req, res) {
   try {
     const { id } = req.params;
     await pool.execute('DELETE FROM order_items WHERE order_id = ?', [id]);
     await pool.execute('DELETE FROM orders WHERE id = ?', [id]);
+    res.json({ message: 'Order deleted' });
   } catch (err) {
-    console.error('deleteOrderAdmin error:', err);
-    res.status(500).json({ message: 'Gabim gjatë fshirjes.' });
+    console.error('deleteOrder error:', err);
+    res.status(500).json({ message: 'Error deleting order' });
   }
-  res.json({ message: 'U fshi.' });
 }
 
 module.exports = {
+  // public
   createOrder,
+
+  // user
+  getMyOrders,
+  getOrderById,
+
+  // admin
   getAllOrders,
-  getOrdersForUser,
-  updateOrderAdmin,
-  deleteOrderAdmin
+  updateOrderStatus,
+  deleteOrder,
+
+  // alias i vjetër nëse diku përdoret
+  updateOrderAdmin: updateOrderStatus,
+  deleteOrderAdmin: deleteOrder,
+
+  // përputhje me user.routes nëse kërkon emrin e vjetër:
+  getOrdersForUser: getMyOrders,
 };

@@ -1,8 +1,9 @@
+// middleware/requireAdmin.js
 function requireAdmin(req, res, next) {
   if (req.user && req.user.role === 'admin') {
-    next();
-  } else {
-    res.status(403).json({ message: "Access denied! Admins only." });
+    return next();
   }
+  return res.status(403).json({ message: 'Access denied! Admins only.' });
 }
-module.exports = requireAdmin;
+
+module.exports = { requireAdmin };

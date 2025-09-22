@@ -1,22 +1,22 @@
+// routes/admin.orders.routes.js
 const express = require('express');
 const router = express.Router();
 
+// ✅ Default import
 const authenticateToken = require('../middleware/auth.middleware');
-// ose: const { authenticateToken } = require('../middleware/auth.middleware');
-const orderCtl = require('../controllers/order.controller');
+// ✅ Named import
+const { requireAdmin } = require('../middleware/requireAdmin');
 
-function requireRole(role) {
-  return (req, res, next) => {
-    if (!req.user || req.user.role !== role) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
-    next();
-  };
-}
+// ✅ Importo controller-at me emra të përputhshëm
+const {
+  getAllOrders,
+  updateOrderAdmin,
+  deleteOrderAdmin,
+} = require('../controllers/order.controller');
 
-// Admin endpoints
-router.get('/orders', authenticateToken, requireRole('admin'), orderCtl.getAllOrders);
-router.patch('/orders/:id', authenticateToken, requireRole('admin'), orderCtl.updateOrderAdmin);
-router.delete('/orders/:id', authenticateToken, requireRole('admin'), orderCtl.deleteOrderAdmin);
+// --- Admin endpoints ---
+router.get('/orders', authenticateToken, requireAdmin, getAllOrders);
+router.patch('/orders/:id', authenticateToken, requireAdmin, updateOrderAdmin);
+router.delete('/orders/:id', authenticateToken, requireAdmin, deleteOrderAdmin);
 
 module.exports = router;
