@@ -13,6 +13,11 @@ const orderRoutes = require('./routes/order.routes');
 const productRoutes = require('./routes/product.routes');
 const userRoutes = require('./routes/user.routes');
 
+const warrantyRoutes = require('./routes/warranty.routes');
+const adminUsersRoutes = require('./routes/admin.users.routes');
+const adminStatsRoutes = require('./routes/admin.stats.routes');
+const contractsRoutes = require('./routes/contracts.routes'); // ← SHTO KËTË
+
 const app = express();
 app.use(express.json());
 
@@ -29,28 +34,51 @@ app.use(cors({
   credentials: true
 }));
 
-// serviron fotot e ngarkuara
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-// log i thjeshtë
+// log
 app.use((req, _res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} <- origin:${req.headers.origin} host:${req.headers.host}`);
   next();
 });
 
-// routes
+
+// routes publike / auth
 app.use('/api/auth', authRoutes);
 app.use('/auth', authRoutes);
 
+// “guard” GET për endpoints e login POST
 app.get('/api/auth/login', (_req, res) => res.status(405).json({ message: 'Use POST /api/auth/login' }));
 app.get('/auth/login', (_req, res) => res.status(405).json({ message: 'Use POST /auth/login' }));
 
+// API publike/user
 app.use('/api/orders', orderRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/user', userRoutes);
+// ✅ health edhe nën /api që të testosh me BASE
+app.get('/api/healthz', (_req, res) => res.json({ ok: true }));
 
+// ✅ TEMP FIX: ndal 404 te /api/contracts/softsave që po bjen panelin
+app.use('/api/contracts/softsave', authenticateToken, requireAdmin, (req, res) => {
+  if (req.method === 'GET')  return res.json([]);                                      // lista bosh (placeholder)
+  if (req.method === 'POST') return res.status(201).json({ ok: true, contract_id: Date.now() });
+  return res.status(405).json({ message: 'Method Not Allowed' });
+});
+
+// Warranty (admin‐only brenda routerit)
+app.use('/api/warranty', warrantyRoutes);
+app.use('/api/contracts', authenticateToken, requireAdmin, contractsRoutes); // ← SHTO KËTË
+
+
+// ADMIN – të gjitha nën /api/admin
 if (adminOrdersRoutes) {
   app.use('/api/admin', authenticateToken, requireAdmin, adminOrdersRoutes);
+}
+if (adminUsersRoutes) {
+  app.use('/api/admin', authenticateToken, requireAdmin, adminUsersRoutes);
+}
+if (adminStatsRoutes) {
+  app.use('/api/admin', authenticateToken, requireAdmin, adminStatsRoutes);
 }
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));

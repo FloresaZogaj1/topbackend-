@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 
 const authenticateToken = require('../middleware/auth.middleware');
-const { requireAdmin } = require('../middleware/requireAdmin'); // <-- FIX
+const { requireAdmin } = require('../middleware/requireAdmin');
 const ctrl = require('../controllers/warranty.controller');
 
 // vetëm admin

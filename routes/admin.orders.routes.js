@@ -1,19 +1,33 @@
 // routes/admin.orders.routes.js
 const express = require('express');
 const router = express.Router();
-const {
-  getAllOrders,
-  updateOrderStatus,
-  deleteOrder,
-} = require('../controllers/order.controller');
+const orderController = require('../controllers/order.controller');
 
-// GET    /api/admin/orders
-router.get('/orders', getAllOrders);
+function mustBeFn(fn, name) {
+  if (typeof fn !== 'function') {
+    console.error(`[AdminOrdersRoutes] ${name} is not a function. Got:`, typeof fn, fn);
+    throw new TypeError(`Handler "${name}" must be a function`);
+  }
+  return fn;
+}
 
-// PUT    /api/admin/orders/:id/status    { status?, payment_status? }
-router.put('/orders/:id/status', updateOrderStatus);
+/**
+ * Mount: app.use('/api/admin', authenticateToken, requireAdmin, adminOrdersRoutes)
+ * Paths:
+ *  GET    /api/admin/orders
+ *  PUT    /api/admin/orders/:id/status
+ *  DELETE /api/admin/orders/:id
+ */
+router.get('/orders',
+  mustBeFn(orderController.getAllOrders, 'orderController.getAllOrders')
+);
 
-// DELETE /api/admin/orders/:id
-router.delete('/orders/:id', deleteOrder);
+router.put('/orders/:id/status',
+  mustBeFn(orderController.updateOrderStatus, 'orderController.updateOrderStatus')
+);
+
+router.delete('/orders/:id',
+  mustBeFn(orderController.deleteOrder, 'orderController.deleteOrder')
+);
 
 module.exports = router;

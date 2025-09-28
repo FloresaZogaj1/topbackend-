@@ -1,23 +1,17 @@
 // middleware/auth.middleware.js
 const jwt = require('jsonwebtoken');
 
-function authenticateToken(req, res, next) {
+module.exports = function authenticateToken(req, res, next) {
+  const hdr = req.headers.authorization || '';
+  const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : null;
+  if (!token) return res.status(401).json({ message: 'Missing token' });
+
   try {
-    const auth = req.headers.authorization || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-
-    if (!token) {
-      return res.status(401).json({ message: 'No token, not authorized!' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: decoded.id, role: decoded.role, email: decoded.email };
-
-    next();
-  } catch (_err) {
-    return res.status(401).json({ message: 'Token invalid or expired.' });
+    const secret = process.env.JWT_SECRET || 'sekret';
+    // pritet payload: { id, email, role }
+    req.user = jwt.verify(token, secret);
+    return next();
+  } catch (e) {
+    return res.status(401).json({ message: 'Invalid/expired token' });
   }
-}
-
-// ✅ Default export
-module.exports = authenticateToken;
+};

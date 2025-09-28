@@ -1,12 +1,13 @@
+// routes/auth.routes.js
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
 const passport = require('../passport');
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-const SUCCESS_PATH = process.env.CLIENT_SUCCESS_PATH || "/auth/success"; // ← path i frontit
+const SUCCESS_PATH = process.env.CLIENT_SUCCESS_PATH || "/auth/success";
 
-// login/register klasik (nëse i përdor)
+// login/register klasik
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 
@@ -14,7 +15,6 @@ router.post('/login', authController.login);
 router.get('/google',
   passport.authenticate('google', { scope: ['profile', 'email'], session: false })
 );
-
 
 router.get('/google/callback',
   passport.authenticate('google', { failureRedirect: `${FRONTEND_URL}/login`, session: false }),
@@ -26,7 +26,6 @@ router.get('/google/callback',
       { expiresIn: '7d' }
     );
     const name = encodeURIComponent(req.user.name || '');
-    // Redirect te fronti: /auth/success?token=...&name=...
     res.redirect(`${FRONTEND_URL}${SUCCESS_PATH}?token=${token}&name=${name}`);
   }
 );
