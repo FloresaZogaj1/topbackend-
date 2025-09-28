@@ -1,6 +1,8 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const authenticateToken = require('./middleware/auth.middleware');
 const { requireAdmin } = require('./middleware/requireAdmin');
@@ -14,7 +16,6 @@ const userRoutes = require('./routes/user.routes');
 const app = express();
 app.use(express.json());
 
-// CORS (pa credentials, me lista të lejuara)
 const allowed = [
   process.env.FRONTEND_URL,
   'https://topmobile.store',
@@ -24,28 +25,26 @@ const allowed = [
 ].filter(Boolean);
 
 app.use(cors({
-  origin: (origin, cb) => cb(null, !origin || allowed.includes(origin))
+  origin: (origin, cb) => cb(null, !origin || allowed.includes(origin)),
+  credentials: true
 }));
 
-// Log i thjeshtë
+// serviron fotot e ngarkuara
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// log i thjeshtë
 app.use((req, _res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
   next();
 });
 
-// ---- AUTH ----
+// routes
 app.use('/api/auth', authRoutes);
 app.use('/auth', authRoutes);
 
-// Përgjigje miqësore për GET (mos t’i tregojë HTML default Express)
-app.get('/api/auth/login', (_req, res) =>
-  res.status(405).json({ message: 'Use POST /api/auth/login' })
-);
-app.get('/auth/login', (_req, res) =>
-  res.status(405).json({ message: 'Use POST /auth/login' })
-);
+app.get('/api/auth/login', (_req, res) => res.status(405).json({ message: 'Use POST /api/auth/login' }));
+app.get('/auth/login', (_req, res) => res.status(405).json({ message: 'Use POST /auth/login' }));
 
-// ---- Rrugë të tjera ----
 app.use('/api/orders', orderRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/user', userRoutes);
@@ -54,7 +53,6 @@ if (adminOrdersRoutes) {
   app.use('/api/admin', authenticateToken, requireAdmin, adminOrdersRoutes);
 }
 
-// Healthcheck
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.get('/', (_req, res) => res.send('API running'));
 

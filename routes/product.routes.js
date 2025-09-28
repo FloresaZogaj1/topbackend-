@@ -5,15 +5,10 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 
-// default import
 const authenticateToken = require('../middleware/auth.middleware');
-// named import
 const { requireAdmin } = require('../middleware/requireAdmin');
+const { getAll, getById, create, update, remove, uploadOnly } = require('../controllers/product.controller');
 
-// controller (named exports)
-const { getAll, getById, create, update, remove } = require('../controllers/product.controller');
-
-// Multer /uploads
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
@@ -38,7 +33,10 @@ const upload = multer({
 router.get('/', getAll);
 router.get('/:id', getById);
 
-// admin
+// upload-only (kthe url)
+router.post('/upload-image', authenticateToken, requireAdmin, upload.single('image'), uploadOnly);
+
+// admin CRUD (pranon ose multipart - me file "image", ose JSON me { image: "url" })
 router.post('/', authenticateToken, requireAdmin, upload.single('image'), create);
 router.put('/:id', authenticateToken, requireAdmin, upload.single('image'), update);
 router.patch('/:id', authenticateToken, requireAdmin, upload.single('image'), update);

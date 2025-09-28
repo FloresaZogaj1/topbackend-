@@ -1,16 +1,18 @@
+// routes/warranty.routes.js
 const express = require('express');
 const router = express.Router();
+
 const authenticateToken = require('../middleware/auth.middleware');
-const requireAdmin = require('../middleware/requireAdmin');
+const { requireAdmin } = require('../middleware/requireAdmin'); // <-- FIX
 const ctrl = require('../controllers/warranty.controller');
 
 // vetëm admin
 router.use(authenticateToken, requireAdmin);
 
-// krijim nga forma (e ke)
+// krijim nga forma
 router.post('/from-form', ctrl.createFromForm);
 
-// LISTIM / DETAJ / FSHIRJE (të reja)
+// listim / detaj / fshirje
 router.get('/', ctrl.list);
 router.get('/:id', ctrl.getOne);
 router.delete('/:id', ctrl.remove);
