@@ -58,16 +58,9 @@ app.use('/api/user', userRoutes);
 // ✅ health edhe nën /api që të testosh me BASE
 app.get('/api/healthz', (_req, res) => res.json({ ok: true }));
 
-// ✅ TEMP FIX: ndal 404 te /api/contracts/softsave që po bjen panelin
-app.use('/api/contracts/softsave', authenticateToken, requireAdmin, (req, res) => {
-  if (req.method === 'GET')  return res.json([]);                                      // lista bosh (placeholder)
-  if (req.method === 'POST') return res.status(201).json({ ok: true, contract_id: Date.now() });
-  return res.status(405).json({ message: 'Method Not Allowed' });
-});
-
 // Warranty (admin‐only brenda routerit)
 app.use('/api/warranty', warrantyRoutes);
-app.use('/api/contracts', authenticateToken, requireAdmin, contractsRoutes); // ← SHTO KËTË
+app.use('/api/contracts', authenticateToken, requireAdmin, contractsRoutes);
 
 
 // ADMIN – të gjitha nën /api/admin
