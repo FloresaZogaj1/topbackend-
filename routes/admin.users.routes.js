@@ -14,6 +14,7 @@ function mustBeFn(fn, name) {
 router.get('/users', mustBeFn(userCtrl.getAllUsers, 'getAllUsers'));
 router.get('/users/:id', mustBeFn(userCtrl.getUserById, 'getUserById'));
 router.put('/users/:id/role', mustBeFn(userCtrl.updateUserRole, 'updateUserRole'));
+router.put('/users/:id', mustBeFn(userCtrl.updateUser, 'updateUser'));
 router.delete('/users/:id', mustBeFn(userCtrl.deleteUser, 'deleteUser'));
 
 module.exports = router;
