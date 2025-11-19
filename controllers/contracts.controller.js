@@ -208,7 +208,7 @@ exports.listSoftSave = async (_req, res) => {
     const hasCustomerId = await contractsHasCustomerId();
     if (hasCustomerId) {
       const [rows] = await pool.query(
-        `SELECT s.id, s.start_date, s.device_name, s.device_brand, s.device_model, s.imei,
+        `SELECT s.id, s.contract_no, s.start_date, s.device_name, s.device_brand, s.device_model, s.imei,
                 s.price, s.payment_type, s.notes,
                 c.first_name, c.last_name, c.phone, c.email
          FROM contracts_softsave s
@@ -220,7 +220,7 @@ exports.listSoftSave = async (_req, res) => {
 
     // Fallback: table has no customer_id column — return contract rows and null customer fields
     const [rows] = await pool.query(
-      `SELECT s.id, s.start_date, s.device_name, s.device_brand, s.device_model, s.imei,
+      `SELECT s.id, s.contract_no, s.start_date, s.device_name, s.device_brand, s.device_model, s.imei,
               s.price, s.payment_type, s.notes
        FROM contracts_softsave s
        ORDER BY s.start_date DESC, s.id DESC`
