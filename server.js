@@ -20,6 +20,8 @@ const contractsRoutes = require('./routes/contracts.routes'); // ← SHTO KËTË
 
 const app = express();
 app.use(express.json());
+// Allow classic HTML form posts (application/x-www-form-urlencoded)
+app.use(express.urlencoded({ extended: true }));
 
 const allowed = [
   process.env.FRONTEND_URL,

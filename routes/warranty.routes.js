@@ -1,6 +1,8 @@
 // routes/warranty.routes.js
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const upload = multer(); // for parsing multipart/form-data (no files)
 
 
 const authenticateToken = require('../middleware/auth.middleware');
@@ -9,7 +11,8 @@ const { requireAdmin } = require('../middleware/requireAdmin');
 const ctrl = require('../controllers/warranty.controller');
 
 // Krijim nga forma: lejohet publikisht (ose me optional auth)
-router.post('/from-form', optionalAuth, ctrl.createFromForm);
+// Prano si JSON, x-www-form-urlencoded (global parser) dhe multipart/form-data pa file
+router.post('/from-form', upload.none(), optionalAuth, ctrl.createFromForm);
 
 // endpointet admin-only
 router.get('/', authenticateToken, requireAdmin, ctrl.list);
