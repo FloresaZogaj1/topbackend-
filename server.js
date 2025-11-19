@@ -61,7 +61,11 @@ app.use('/api/user', userRoutes);
 app.get('/api/healthz', (_req, res) => res.json({ ok: true }));
 
 // Warranty (admin‐only brenda routerit)
+// Alias: disa thirrje ekzistuese në frontend po dërgohen te /warranty/from-form (pa /api)
+// për shkak se REACT_APP_API_URL është vendosur direkt në domain-in e API-së.
+// Ruaj /api/warranty si primary, por ekspozo edhe /warranty për createFromForm.
 app.use('/api/warranty', warrantyRoutes);
+app.use('/warranty', warrantyRoutes); // alias për kompatibilitet (404 fix)
 app.use('/api/contracts', authenticateToken, requireAdmin, contractsRoutes);
 
 
