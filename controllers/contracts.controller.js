@@ -27,14 +27,20 @@ async function contractsHasCustomerId() {
 exports.createSoftSave = async (req, res) => {
   try {
     console.log('[contracts.createSoftSave] incoming body:', JSON.stringify(req.body));
-    const {
-      emri, mbiemri, telefoni, email,
-      marka, modeli, imei,
-      pajisja,        // opsional
-      cmimi, llojiPageses,
-      data,
-      komente
-    } = req.body || {};
+    // Lejome payload të vjetër nga frontend (firstName, lastName, brand, model, version, payType, date) dhe struktura e re
+    const body = req.body || {};
+    const emri = body.emri || body.firstName || body.first_name || '';
+    const mbiemri = body.mbiemri || body.lastName || body.last_name || '';
+    const telefoni = body.telefoni || body.phone || null;
+    const email = body.email || null;
+    const marka = body.marka || body.brand || body.device_brand || null;
+    const modeli = body.modeli || body.model || body.device_model || null;
+    const imei = body.imei || null;
+    const pajisja = body.pajisja || body.version || body.device_name || null;
+    const cmimi = body.cmimi || body.price || null;
+    const llojiPageses = body.llojiPageses || body.payType || body.payment_type || 'Cash';
+    const data = body.data || body.date || body.start_date || new Date().toISOString().slice(0,10);
+    const komente = body.komente || body.notes || null;
 
     if (!emri || !mbiemri || !imei || !data) {
       return res.status(400).json({ message: 'Fusha të detyrueshme mungojnë.' });
