@@ -14,8 +14,18 @@ exports.createFromForm = async (req, res) => {
     llojiPageses
   } = req.body;
 
-  if (!emri || !mbiemri || !marka || !modeli || !imei || !kohezgjatja || !cmimi || !data) {
-    return res.status(400).json({ message: 'Fusha të detyrueshme mungojnë.' });
+  // DEBUG: log incoming payload to help trace 400 errors from frontend
+  console.log('[warranty.createFromForm] incoming body:', JSON.stringify(req.body));
+
+  // Validate required fields and return specific missing field for easier debugging
+  const required = [
+    ['emri', emri], ['mbiemri', mbiemri], ['marka', marka], ['modeli', modeli],
+    ['imei', imei], ['kohezgjatja', kohezgjatja], ['cmimi', cmimi], ['data', data]
+  ];
+  const missing = required.filter(([k, v]) => v === undefined || v === null || String(v).trim() === "").map(r => r[0]);
+  if (missing.length) {
+    console.warn('[warranty.createFromForm] missing fields:', missing);
+    return res.status(400).json({ message: 'Fusha të detyrueshme mungojnë.', missing });
   }
 
   const conn = await pool.getConnection();
@@ -49,13 +59,36 @@ exports.createFromForm = async (req, res) => {
     const duration = monthsFromText(kohezgjatja);
     const price = Number(String(cmimi).replace(',', '.'));
 
+    // Siguro created_by që të mos bjerë në FK (warranties.created_by → users.id)
+    let createdBy;
+    if (req.user && req.user.id) {
+      createdBy = req.user.id;
+    } else {
+      // Merr një user ekzistues (p.sh. admin i parë) ose 0 nëse nuk ka tabela users
+      try {
+        const [users] = await conn.query('SELECT id FROM users ORDER BY id ASC LIMIT 1');
+        createdBy = users.length ? users[0].id : 0; // 0 vetëm nëse nuk ka fare user, shmang FK
+      } catch (e) {
+        createdBy = 0; // në rast gabimi në query, përdor 0 për të mos ndërprerë
+      }
+    }
+
     const [w] = await conn.query(
       `INSERT INTO warranties
        (customer_id, brand, model, imei, software_info, duration_months, price, start_date, payment_type, comments, created_by)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        customerId, marka, modeli, imei, softInfo || null, duration,
-        price, data, llojiPageses || 'Cash', komente || null, req.user.id
+        customerId,
+        marka,
+        modeli,
+        imei,
+        softInfo || null,
+        duration,
+        price,
+        data,
+        llojiPageses || 'Cash',
+        komente || null,
+        createdBy,
       ]
     );
 
@@ -64,7 +97,12 @@ exports.createFromForm = async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error('createFromForm error', err);
-    res.status(500).json({ message: 'Server error' });
+    const payload = { message: 'Server error' };
+    if (process.env.NODE_ENV !== 'production') {
+      payload.error = err.message;
+      payload.stack = err.stack;
+    }
+    res.status(500).json(payload);
   } finally {
     conn.release();
   }
@@ -110,6 +148,25 @@ exports.remove = async (req, res) => {
     await pool.query('DELETE FROM warranties WHERE id=?', [req.params.id]);
     res.json({ ok: true });
   } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// UPDATE një garancion (admin)
+exports.update = async (req, res) => {
+  const id = req.params.id;
+  const {
+    brand, model, imei, software_info, duration_months, price, start_date, payment_type, comments
+  } = req.body;
+
+  try {
+    await pool.query(
+      `UPDATE warranties SET brand=?, model=?, imei=?, software_info=?, duration_months=?, price=?, start_date=?, payment_type=?, comments=? WHERE id=?`,
+      [brand, model, imei, software_info, duration_months, price, start_date, payment_type, comments, id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('warranty.update error', err);
     res.status(500).json({ message: 'Server error' });
   }
 };

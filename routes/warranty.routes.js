@@ -2,19 +2,20 @@
 const express = require('express');
 const router = express.Router();
 
+
 const authenticateToken = require('../middleware/auth.middleware');
+const optionalAuth = require('../middleware/optionalAuth');
 const { requireAdmin } = require('../middleware/requireAdmin');
 const ctrl = require('../controllers/warranty.controller');
 
-// vetëm admin
-router.use(authenticateToken, requireAdmin);
+// Krijim nga forma: lejohet publikisht (ose me optional auth)
+router.post('/from-form', optionalAuth, ctrl.createFromForm);
 
-// krijim nga forma
-router.post('/from-form', ctrl.createFromForm);
-
-// listim / detaj / fshirje
-router.get('/', ctrl.list);
-router.get('/:id', ctrl.getOne);
-router.delete('/:id', ctrl.remove);
+// endpointet admin-only
+router.get('/', authenticateToken, requireAdmin, ctrl.list);
+router.get('/:id', authenticateToken, requireAdmin, ctrl.getOne);
+router.delete('/:id', authenticateToken, requireAdmin, ctrl.remove);
+// update (admin)
+router.put('/:id', authenticateToken, requireAdmin, ctrl.update);
 
 module.exports = router;

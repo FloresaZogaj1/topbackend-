@@ -78,4 +78,26 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.get('/', (_req, res) => res.send('API running'));
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+const HOST = process.env.HOST || '0.0.0.0';
+// Run migrations before starting server
+const { runMigrations } = require('./scripts/run_migrations');
+
+async function start() {
+  try {
+    await runMigrations();
+  } catch (err) {
+    console.error('Migrations failed on startup, exiting.', err);
+    process.exit(1);
+  }
+
+  const server = app.listen(PORT, HOST, () => {
+    try {
+      const addr = server.address();
+      console.log(`🚀 Server running on ${addr.address || '0.0.0.0'}:${addr.port}`);
+    } catch (e) {
+      console.log(`🚀 Server running on port ${PORT}`);
+    }
+  });
+}
+
+start();

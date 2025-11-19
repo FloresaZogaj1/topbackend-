@@ -8,15 +8,32 @@ const toNum = (v, d = 0) => {
 };
 
 // CREATE  POST /api/contracts/softsave
+// This handler is resilient to DB schemas that may or may not include a customer_id column
+let _contractsHasCustomerId = null;
+async function contractsHasCustomerId() {
+  if (_contractsHasCustomerId !== null) return _contractsHasCustomerId;
+  try {
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) as cnt FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'contracts_softsave' AND column_name = 'customer_id'`
+    );
+    _contractsHasCustomerId = !!(rows && rows[0] && rows[0].cnt);
+  } catch (err) {
+    console.warn('Could not check contracts_softsave columns:', err.message || err);
+    _contractsHasCustomerId = false;
+  }
+  return _contractsHasCustomerId;
+}
+
 exports.createSoftSave = async (req, res) => {
   try {
+    console.log('[contracts.createSoftSave] incoming body:', JSON.stringify(req.body));
     const {
       emri, mbiemri, telefoni, email,
       marka, modeli, imei,
-      pajisja,        // opsional: p.sh. "iPhone / Laptop", nëse fronti e dërgon
-      cmimi, llojiPageses,  // "Cash", "Card", etj.
-      data,           // ISO date "YYYY-MM-DD"
-      komente         // opsional
+      pajisja,        // opsional
+      cmimi, llojiPageses,
+      data,
+      komente
     } = req.body || {};
 
     if (!emri || !mbiemri || !imei || !data) {
@@ -27,7 +44,7 @@ exports.createSoftSave = async (req, res) => {
     try {
       await conn.beginTransaction();
 
-      // gjej ose krijo klientin
+      // find or create customer (defensive)
       let customerId = null;
       if (email) {
         const [r] = await conn.query('SELECT id FROM customers WHERE email=? LIMIT 1', [email]);
@@ -37,65 +54,180 @@ exports.createSoftSave = async (req, res) => {
         const [r] = await conn.query('SELECT id FROM customers WHERE phone=? LIMIT 1', [telefoni]);
         if (r.length) customerId = r[0].id;
       }
+
       if (!customerId) {
-        const [ins] = await conn.query(
-          'INSERT INTO customers (first_name,last_name,phone,email) VALUES (?,?,?,?)',
-          [emri, mbiemri, telefoni || null, email || null]
+        // Inspect customers table to safely insert only supported/nullable columns
+        const [cols] = await conn.query(
+          "SELECT COLUMN_NAME AS column_name, IS_NULLABLE AS is_nullable, COLUMN_DEFAULT AS column_default FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'customers'"
         );
-        customerId = ins.insertId;
+        const colInfo = {};
+        for (const c of cols) colInfo[c.column_name] = { is_nullable: c.is_nullable, column_default: c.column_default };
+
+        // mapping from our incoming fields to customers table columns
+        const mapping = [
+          ['first_name', emri],
+          ['last_name', mbiemri],
+          ['phone', telefoni],
+          ['email', email]
+        ];
+
+        const insertCols = [];
+        const insertVals = [];
+        let cannotCreateCustomer = false;
+
+        for (const [col, val] of mapping) {
+          if (!colInfo[col]) continue; // column doesn't exist in this DB schema
+          if (val != null && String(val).trim() !== '') {
+            insertCols.push('`' + col + '`');
+            insertVals.push(val);
+            continue;
+          }
+          // no value provided
+          const info = colInfo[col];
+          if (info.is_nullable === 'YES' || info.column_default != null) {
+            // safe to insert NULL or skip
+            continue;
+          }
+          // column exists and is NOT NULL with no default -> we cannot create customer safely
+          cannotCreateCustomer = true;
+          break;
+        }
+
+        if (!cannotCreateCustomer && insertCols.length) {
+          const sql = `INSERT INTO customers (${insertCols.join(',')}) VALUES (${insertCols.map(_=> '?').join(',')})`;
+          const [ins] = await conn.query(sql, insertVals);
+          customerId = ins.insertId;
+        } else if (!cannotCreateCustomer && insertCols.length === 0) {
+          // No mapped columns exist or no values to insert; skip creating customer
+          customerId = null;
+        } else {
+          // cannot create customer because required columns are missing values
+          console.warn('[contracts.createSoftSave] Skipping customer creation: required customer columns missing values for this schema');
+          customerId = null;
+        }
       } else {
-        await conn.query(
-          'UPDATE customers SET first_name=?, last_name=?, phone=IFNULL(?,phone), email=IFNULL(?,email) WHERE id=?',
-          [emri, mbiemri, telefoni || null, email || null, customerId]
-        );
+        // existing customer: attempt safe update of available columns
+        try {
+          const updates = [];
+          const params = [];
+          if (emri) { updates.push('first_name=?'); params.push(emri); }
+          if (mbiemri) { updates.push('last_name=?'); params.push(mbiemri); }
+          if (telefoni) { updates.push('phone=IFNULL(?,phone)'); params.push(telefoni); }
+          if (email) { updates.push('email=IFNULL(?,email)'); params.push(email); }
+          if (updates.length) {
+            params.push(customerId);
+            await conn.query(`UPDATE customers SET ${updates.join(', ')} WHERE id=?`, params);
+          }
+        } catch (err) {
+          console.warn('[contracts.createSoftSave] safe customer update failed', err.message || err);
+        }
       }
 
-      // ruaj kontratën
-      const [k] = await conn.query(
-        `INSERT INTO contracts_softsave
-         (customer_id, device_brand, device_model, device_name, imei, price, payment_type, start_date, notes, created_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        [
-          customerId,
-          marka || null,
-          modeli || null,
-          pajisja || null,
-          imei,
-          toNum(cmimi),
-          llojiPageses || 'Cash',
-          data,
-          komente || null,
-          req.user?.id || null
-        ]
+      // Inspect actual columns on contracts_softsave to avoid missing NOT NULL columns
+      const [tableCols] = await conn.query(
+        `SELECT COLUMN_NAME AS column_name, IS_NULLABLE AS is_nullable, COLUMN_DEFAULT AS column_default, COLUMN_TYPE AS column_type FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'contracts_softsave' ORDER BY ordinal_position`
       );
+      // defensive: ensure rows are well-formed
+      if (!Array.isArray(tableCols)) {
+        throw new Error('Unexpected information_schema response for contracts_softsave');
+      }
+  console.log('[contracts.createSoftSave] contracts_softsave columns:', tableCols.map(c => (c && c.column_name) || null));
+  if (tableCols.length) console.log('[contracts.createSoftSave] first column raw:', JSON.stringify(tableCols[0]));
+      const commonValues = {
+        customer_id: customerId,
+        contract_no: `C-${Date.now()}`,
+        first_name: emri || '',
+        last_name: mbiemri || '',
+        phone: telefoni || null,
+        email: email || null,
+        device_brand: marka || null,
+        device_model: modeli || null,
+        device_name: pajisja || null,
+        imei: imei || null,
+        price: toNum(cmimi),
+        payment_type: llojiPageses || 'Cash',
+        start_date: data || null,
+        notes: komente || null,
+        created_by: req.user?.id || null
+      };
+
+      const insertCols = [];
+      const insertVals = [];
+      for (const col of tableCols) {
+        if (!col || !col.column_name) continue;
+        const name = col.column_name;
+        if (name === 'id' || name === 'created_at') continue; // auto-generated
+        let val = commonValues.hasOwnProperty(name) ? commonValues[name] : null;
+        if ((val === null || val === undefined) && String(col.is_nullable) === 'NO' && col.column_default == null) {
+          // supply sensible defaults based on type
+          const t = (col.column_type || col.COLUMN_TYPE || '').toLowerCase();
+          if (name === 'contract_no') val = `C-${Date.now()}`;
+          else if (t.startsWith('int') || t.startsWith('decimal') || t.startsWith('bigint') || t.startsWith('tinyint')) val = 0;
+          else if (t.startsWith('varchar') || t.startsWith('text') || name.includes('name') || name.includes('phone') || name.includes('email')) val = '';
+          else if (t.startsWith('date') || t.startsWith('timestamp')) val = new Date().toISOString().slice(0,10);
+          else val = null; // as last resort
+        }
+        // If column exists but we still have undefined and it's nullable, set NULL
+        insertCols.push('`' + name + '`');
+        insertVals.push(val);
+      }
+
+      if (insertCols.length === 0) throw new Error('No writable columns found on contracts_softsave');
+      const placeholders = insertCols.map(_ => '?').join(',');
+      const sql = `INSERT INTO contracts_softsave (${insertCols.join(',')}) VALUES (${placeholders})`;
+      const [insertResult] = await conn.query(sql, insertVals);
 
       await conn.commit();
-      res.status(201).json({ ok: true, contract_id: k.insertId, customer_id: customerId });
+      res.status(201).json({ ok: true, contract_id: insertResult.insertId, customer_id: customerId });
     } catch (err) {
       await conn.rollback();
       console.error('createSoftSave error', err);
-      res.status(500).json({ message: 'Server error' });
+      const payload = { message: 'Server error' };
+      if (process.env.NODE_ENV !== 'production') { payload.error = err.message; payload.stack = err.stack; }
+      res.status(500).json(payload);
     } finally {
       conn.release();
     }
   } catch (err) {
     console.error('createSoftSave top error', err);
-    res.status(500).json({ message: 'Server error' });
+    const payload = { message: 'Server error' };
+    if (process.env.NODE_ENV !== 'production') { payload.error = err.message; payload.stack = err.stack; }
+    res.status(500).json(payload);
   }
 };
 
 // LIST  GET /api/contracts/softsave
 exports.listSoftSave = async (_req, res) => {
   try {
+    const hasCustomerId = await contractsHasCustomerId();
+    if (hasCustomerId) {
+      const [rows] = await pool.query(
+        `SELECT s.id, s.start_date, s.device_name, s.device_brand, s.device_model, s.imei,
+                s.price, s.payment_type, s.notes,
+                c.first_name, c.last_name, c.phone, c.email
+         FROM contracts_softsave s
+         LEFT JOIN customers c ON c.id = s.customer_id
+         ORDER BY s.start_date DESC, s.id DESC`
+      );
+      return res.json(rows);
+    }
+
+    // Fallback: table has no customer_id column — return contract rows and null customer fields
     const [rows] = await pool.query(
       `SELECT s.id, s.start_date, s.device_name, s.device_brand, s.device_model, s.imei,
-              s.price, s.payment_type, s.notes,
-              c.first_name, c.last_name, c.phone, c.email
+              s.price, s.payment_type, s.notes
        FROM contracts_softsave s
-       JOIN customers c ON c.id = s.customer_id
        ORDER BY s.start_date DESC, s.id DESC`
     );
-    res.json(rows);
+    // map to expected shape with empty customer fields
+    const mapped = rows.map(r => ({
+      ...r,
+      first_name: null,
+      last_name: null,
+      phone: null,
+      email: null
+    }));
+    res.json(mapped);
   } catch (err) {
     console.error('listSoftSave error', err);
     res.status(500).json({ message: 'Server error' });
@@ -108,15 +240,27 @@ exports.getSoftSave = async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ message: 'ID e pavlefshme.' });
 
+    const hasCustomerId = await contractsHasCustomerId();
+    if (hasCustomerId) {
+      const [rows] = await pool.query(
+        `SELECT s.*, c.first_name, c.last_name, c.phone, c.email
+         FROM contracts_softsave s
+         LEFT JOIN customers c ON c.id = s.customer_id
+         WHERE s.id = ?`,
+        [id]
+      );
+      if (!rows.length) return res.status(404).json({ message: 'Nuk u gjet' });
+      return res.json(rows[0]);
+    }
+
+    // Fallback: no customer_id column — select contract only and synthesize null customer fields
     const [rows] = await pool.query(
-      `SELECT s.*, c.first_name, c.last_name, c.phone, c.email
-       FROM contracts_softsave s
-       JOIN customers c ON c.id = s.customer_id
-       WHERE s.id = ?`,
+      `SELECT s.* FROM contracts_softsave s WHERE s.id = ?`,
       [id]
     );
     if (!rows.length) return res.status(404).json({ message: 'Nuk u gjet' });
-    res.json(rows[0]);
+    const out = { ...rows[0], first_name: null, last_name: null, phone: null, email: null };
+    res.json(out);
   } catch (err) {
     console.error('getSoftSave error', err);
     res.status(500).json({ message: 'Server error' });
