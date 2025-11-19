@@ -17,6 +17,8 @@ const warrantyRoutes = require('./routes/warranty.routes');
 const adminUsersRoutes = require('./routes/admin.users.routes');
 const adminStatsRoutes = require('./routes/admin.stats.routes');
 const contractsRoutes = require('./routes/contracts.routes'); // ← SHTO KËTË
+const optionalAuth = require('./middleware/optionalAuth');
+const contractsController = require('./controllers/contracts.controller');
 
 const app = express();
 app.use(express.json());
@@ -66,7 +68,10 @@ app.get('/api/healthz', (_req, res) => res.json({ ok: true }));
 // Ruaj /api/warranty si primary, por ekspozo edhe /warranty për createFromForm.
 app.use('/api/warranty', warrantyRoutes);
 app.use('/warranty', warrantyRoutes); // alias për kompatibilitet (404 fix)
+// Admin endpoints për kontrata (listim/shikim) – mbrojtur
 app.use('/api/contracts', authenticateToken, requireAdmin, contractsRoutes);
+// Alias publik vetëm për krijim kontrate nga forma e klientit
+app.post('/contracts/softsave', optionalAuth, contractsController.createSoftSave);
 
 
 // ADMIN – të gjitha nën /api/admin
