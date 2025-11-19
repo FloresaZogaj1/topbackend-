@@ -272,3 +272,56 @@ exports.getSoftSave = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+// UPDATE  PUT /api/contracts/softsave/:id
+exports.updateSoftSave = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'ID e pavlefshme.' });
+
+    const body = req.body || {};
+    const fields = {
+      first_name: body.emri || body.firstName || body.first_name,
+      last_name: body.mbiemri || body.lastName || body.last_name,
+      device_brand: body.marka || body.brand,
+      device_model: body.modeli || body.model,
+      device_name: body.pajisja || body.version,
+      imei: body.imei,
+      payment_type: body.llojiPageses || body.payType || body.payment_type,
+      start_date: body.data || body.date || body.start_date,
+      notes: body.komente || body.notes
+    };
+
+    // Build dynamic SET clause only for provided non-undefined keys
+    const setParts = [];
+    const params = [];
+    for (const [col, val] of Object.entries(fields)) {
+      if (val === undefined) continue;
+      setParts.push(`${col}=?`);
+      params.push(val === '' ? null : val); // treat empty string as NULL
+    }
+    if (!setParts.length) return res.status(400).json({ message: 'Ska fusha për përditësim.' });
+    params.push(id);
+
+    const [r] = await pool.query(`UPDATE contracts_softsave SET ${setParts.join(', ')} WHERE id=?`, params);
+    if (r.affectedRows === 0) return res.status(404).json({ message: 'Nuk u gjet.' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('updateSoftSave error', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// DELETE  DELETE /api/contracts/softsave/:id
+exports.deleteSoftSave = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'ID e pavlefshme.' });
+    const [r] = await pool.query(`DELETE FROM contracts_softsave WHERE id=?`, [id]);
+    if (r.affectedRows === 0) return res.status(404).json({ message: 'Nuk u gjet.' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('deleteSoftSave error', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
